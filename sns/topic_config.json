@@ -1,0 +1,6 @@
+{
+  "Name": "automlops-model-notifications",
+  "Tags": [
+    { "Key": "project", "Value": "automlops" }
+  ]
+}

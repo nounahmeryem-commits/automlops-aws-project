@@ -1,0 +1,28 @@
+# Secrets et config locale
+.env
+*.pem
+.aws/
+
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Packaging Lambda
+*.zip
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Système et éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Données et modèles
+*.csv
+*.parquet
+*.tar.gz

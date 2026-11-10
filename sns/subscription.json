@@ -1,0 +1,5 @@
+{
+  "TopicArn": "arn:aws:sns:eu-north-1:<account_id>:automlops-model-notifications",
+  "Protocol": "email",
+  "Endpoint": "<your-email@example.com>"
+}

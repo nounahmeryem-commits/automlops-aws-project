@@ -1,0 +1,126 @@
+{
+  "Comment": "Orchestration du pipeline AutoMLOps Lab",
+  "StartAt": "RunSageMakerProcessing",
+  "States": {
+    "RunSageMakerProcessing": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sagemaker:createProcessingJob.sync",
+      "Parameters": {
+        "ProcessingJobName.$": "States.Format('automlops-{}', States.UUID())",
+        "RoleArn": "arn:aws:iam::<account_id>:role/service-role/<sagemaker-execution-role>",
+        "AppSpecification": {
+          "ImageUri": "662702820516.dkr.ecr.eu-north-1.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3",
+          "ContainerEntrypoint": [
+            "python3",
+            "/opt/ml/processing/input/code/launcher.py"
+          ]
+        },
+        "ProcessingResources": {
+          "ClusterConfig": {
+            "InstanceCount": 1,
+            "InstanceType": "ml.t3.medium",
+            "VolumeSizeInGB": 10
+          }
+        },
+        "ProcessingInputs": [
+          {
+            "InputName": "launcher",
+            "S3Input": {
+              "S3Uri": "s3://<your-bucket>/code/launcher.py",
+              "LocalPath": "/opt/ml/processing/input/code",
+              "S3DataType": "S3Prefix",
+              "S3InputMode": "File"
+            }
+          }
+        ],
+        "StoppingCondition": {
+          "MaxRuntimeInSeconds": 3600
+        }
+      },
+      "Next": "decision-evaluation"
+    },
+    "decision-evaluation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:eu-north-1:<account_id>:function:automlops-read-evaluation:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2,
+          "JitterStrategy": "FULL"
+        }
+      ],
+      "Next": "decision-promoting"
+    },
+    "decision-promoting": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.decision",
+          "StringEquals": "APPROVED",
+          "Next": "ModelApproved"
+        },
+        {
+          "Variable": "$.decision",
+          "StringEquals": "REJECTED",
+          "Next": "NotifyModelRejected"
+        }
+      ],
+      "Default": "InvalidDecision"
+    },
+    "NotifyModelRejected": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:eu-north-1:<account_id>:automlops-model-notifications",
+        "Message": {
+          "notification": "AutoMLOps Lab - Model REJECTED",
+          "decision": "REJECTED",
+          "message": "The candidate model did not satisfy the promotion guardrails. The baseline remains the active production model.",
+          "active_model": "Baseline model",
+          "report_s3_uri": "s3://<your-bucket>/reports/evaluation.json"
+        }
+      },
+      "Next": "ModelRejected"
+    },
+    "ModelRejected": {
+      "Type": "Succeed"
+    },
+    "ModelApproved": {
+      "Type": "Pass",
+      "Next": "NotifyModelApproved"
+    },
+    "NotifyModelApproved": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:eu-north-1:<account_id>:automlops-model-notifications",
+        "Message": {
+          "notification": "AutoMLOps Lab - Model APPROVED",
+          "decision": "APPROVED",
+          "message": "The candidate model passed the promotion guardrails and is now the active production model.",
+          "active_model": "Approved candidate model",
+          "report_s3_uri": "s3://<your-bucket>/reports/evaluation.json"
+        }
+      },
+      "Next": "WorkflowCompletedApproved"
+    },
+    "WorkflowCompletedApproved": {
+      "Type": "Succeed"
+    },
+    "InvalidDecision": {
+      "Type": "Fail"
+    }
+  }
+}
